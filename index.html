@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0F1117"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Muscle Atlas"/>
+<title>Human Muscle Atlas</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#0F1117;font-family:'Segoe UI',system-ui,-apple-system,sans-serif}
+#root{height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+::-webkit-scrollbar{display:none}
+*{scrollbar-width:none}
+button{font-family:inherit}
+textarea{font-family:inherit}
+
+#install-banner{
+  position:fixed;top:0;left:0;right:0;z-index:9999;
+  background:linear-gradient(135deg,#1A1D27,#22253A);
+  border-bottom:1px solid rgba(155,137,196,0.3);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+  display:flex;align-items:center;gap:10px;
+  transform:translateY(-100%);transition:transform .35s ease;
+}
+#install-banner.show{transform:translateY(0)}
+#install-banner .ib-text{flex:1}
+#install-banner .ib-text b{display:block;font-size:13px;color:#E8ECF0}
+#install-banner .ib-text span{font-size:11px;color:#7A8BAA}
+#ibtn{background:#9B89C4;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer}
+#dbtn{background:none;border:none;color:#7A8BAA;font-size:20px;cursor:pointer;padding:0 4px;line-height:1}
+
+#ios-hint{
+  position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);
+  background:#22253A;border:1px solid rgba(155,137,196,0.3);border-radius:14px;
+  padding:14px 18px;z-index:9999;max-width:300px;width:90%;text-align:center;
+  opacity:0;transition:all .35s;pointer-events:none;
+}
+#ios-hint.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+#ios-hint p{font-size:12px;color:#C0CAD8;line-height:1.7}
+#ios-hint strong{color:#9B89C4}
+#ios-hint button{margin-top:10px;background:none;border:1px solid #2A2E45;border-radius:8px;padding:5px 16px;color:#7A8BAA;font-size:11px;cursor:pointer}
+
+.toast{
+  position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-10px);
+  border-radius:20px;padding:7px 18px;font-size:12px;font-weight:700;
+  z-index:9999;opacity:0;transition:all .3s;pointer-events:none;color:#fff;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div id="install-banner">
+  <span style="font-size:24px">🧠</span>
+  <div class="ib-text"><b>Install Muscle Atlas</b><span>Works offline · No app store</span></div>
+  <button id="ibtn">Install</button>
+  <button id="dbtn">✕</button>
+</div>
+
+<div id="ios-hint">
+  <p>To install on iPhone:<br>tap <strong>Share ⬆</strong> then<br><strong>Add to Home Screen</strong></p>
+  <button id="ios-close">Got it</button>
+</div>
+
+<div id="toast-off" class="toast" style="background:#E88080">📵 Offline — Atlas still works!</div>
+<div id="toast-on"  class="toast" style="background:#85C18A">✅ Back online</div>
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+// ─── SHORTHAND ────────────────────────────────────────────────────────────────
+const e = React.createElement;
+const {useState, useEffect} = React;
+
+// ─── DATA ─────────────────────────────────────────────────────────────────────
+const regionColors = {
+  "Upper Limb":"#9B89C4","Lower Limb":"#E88080","Head & Neck":"#E8A87C",
+  "Thorax":"#7EB8C9","Abdomen":"#85C18A","Pelvis":"#85C18A"
+};
+
+const regions = [
+  { id:"head", label:"Head & Neck", color:"#E8A87C", accent:"#C4714A", icon:"🧠", groups:[
+    { name:"Facial Expression", nerve:"CN VII — Facial nerve", muscles:["Frontalis","Orbicularis oculi","Zygomaticus","Orbicularis oris","Buccinator","Platysma"] },
+    { name:"Mastication", nerve:"CN V3 — Mandibular", muscles:["Temporalis","Masseter","Medial pterygoid","Lateral pterygoid"] },
+    { name:"Extraocular", nerve:"CN III / IV / VI", muscles:["Superior rectus (III)","Inferior rectus (III)","Medial rectus (III)","Inferior oblique (III)","Superior oblique (IV)","Lateral rectus (VI)"] },
+    { name:"Tongue", nerve:"CN XII — Hypoglossal", muscles:["Genioglossus","Hyoglossus","Styloglossus","Palatoglossus (CN X)"] },
+    { name:"Neck — Anterior", nerve:"CN XI / Ansa cervicalis", muscles:["Sternocleidomastoid (XI)","Trapezius (XI)","Infrahyoids (C1–C3)","Scalenes (C3–C8)"] },
+  ]},
+  { id:"thorax", label:"Thorax & Back", color:"#7EB8C9", accent:"#4A8FA3", icon:"🫁", groups:[
+    { name:"Thoracic Wall", nerve:"Intercostal nerves T1–T11", muscles:["External intercostals","Internal intercostals","Innermost intercostals","Serratus posterior sup. (T2–T5)","Serratus posterior inf. (T9–T12)"] },
+    { name:"Diaphragm", nerve:"Phrenic nerve C3–C5", muscles:["Diaphragm"], highlight:true },
+    { name:"Deep Back (Intrinsic)", nerve:"Dorsal rami (segmental)", muscles:["Erector spinae group","Multifidus","Semispinalis","Rotatores","Splenius capitis/cervicis","Suboccipital group (C1 dorsal ramus)"] },
+  ]},
+  { id:"upper", label:"Upper Limb", color:"#9B89C4", accent:"#6B5A9E", icon:"💪", groups:[
+    { name:"Shoulder & Cuff", nerve:"Axillary / Suprascapular", muscles:["Deltoid (Axillary C5–6)","Supraspinatus (Suprascapular C5–6)","Infraspinatus (Suprascapular C5–6)","Teres minor (Axillary C5–6)","Subscapularis (Subscapular C5–6)"] },
+    { name:"Arm — Anterior", nerve:"Musculocutaneous C5–C7", muscles:["Biceps brachii","Brachialis","Coracobrachialis"] },
+    { name:"Arm — Posterior", nerve:"Radial nerve C6–C8", muscles:["Triceps brachii","Anconeus"] },
+    { name:"Forearm Flexors", nerve:"Median / Ulnar / AIN", muscles:["FCR, Palmaris longus, FDS (Median)","FDP medial half, FCU (Ulnar)","FPL, FDP lateral, PQ (AIN)"] },
+    { name:"Forearm Extensors", nerve:"Radial / PIN", muscles:["Brachioradialis, ECRL/B (Radial)","EDC, ECU, Supinator, APL, EPL/B (PIN)"] },
+    { name:"Hand Intrinsics", nerve:"Median (LOAF) / Ulnar (rest)", muscles:["APB, Opponens pollicis, FPB sup., Lumbricals 1&2 (Median)","All interossei, Hypothenar, Lumbricals 3&4 (Ulnar)"], highlight:true },
+  ]},
+  { id:"abdomen", label:"Abdomen & Pelvis", color:"#85C18A", accent:"#4E8F54", icon:"🫃", groups:[
+    { name:"Anterior Wall", nerve:"T7–T12 + Iliohypogastric/ilioinguinal (L1)", muscles:["External oblique","Internal oblique","Transversus abdominis","Rectus abdominis"] },
+    { name:"Posterior Wall", nerve:"T12–L4 (direct ventral rami)", muscles:["Psoas major (L1–L3)","Quadratus lumborum (T12–L4)"] },
+    { name:"Pelvic Floor", nerve:"Pudendal nerve S2–S4", muscles:["Levator ani","Coccygeus","External urethral sphincter","External anal sphincter"] },
+  ]},
+  { id:"lower", label:"Lower Limb", color:"#E88080", accent:"#B84F4F", icon:"🦵", groups:[
+    { name:"Gluteal Region", nerve:"Superior / Inferior gluteal", muscles:["Gluteus maximus (Inferior gluteal L5–S2)","Gluteus medius & minimus (Superior gluteal L4–S1)","TFL (Superior gluteal L4–S1)","Deep rotators (S1–S2)"] },
+    { name:"Thigh — Anterior", nerve:"Femoral nerve L2–L4", muscles:["Quadriceps femoris","Sartorius","Iliopsoas (Femoral + L1–L3)"] },
+    { name:"Thigh — Medial", nerve:"Obturator nerve L2–L4", muscles:["Adductor longus","Adductor brevis","Adductor magnus (adductor part)","Gracilis","Obturator externus"] },
+    { name:"Thigh — Posterior", nerve:"Sciatic (Tibial + Common fibular)", muscles:["Biceps femoris long head (Tibial L5–S2)","Semitendinosus (Tibial L5–S2)","Semimembranosus (Tibial L5–S2)","Biceps short head (Common fibular L5–S2)"] },
+    { name:"Leg — Anterior & Lateral", nerve:"Deep / Superficial fibular", muscles:["Tibialis anterior, EHL, EDL (Deep fibular L4–S1)","Fibularis longus & brevis (Superficial fibular L5–S1)"] },
+    { name:"Leg — Posterior", nerve:"Tibial nerve S1–S2", muscles:["Gastrocnemius","Soleus","Plantaris","Popliteus, FHL, FDL, Tibialis posterior (L4–S1)"] },
+    { name:"Foot Intrinsics", nerve:"Medial / Lateral plantar", muscles:["Lumbrical 1, FHB (Medial plantar L5–S1)","All others: Lateral plantar (S2–S3)","EDB, EHB (Deep fibular L5–S1)"], highlight:true },
+  ]},
+];
+
+const mnemonics = [
+  {text:"C3, C4, C5 — keeps the diaphragm alive", icon:"🫁"},
+  {text:"LOAF = Median nerve: Lumbricals 1&2, Opponens, Abductor pollicis brevis, Flexor pollicis brevis", icon:"✋"},
+  {text:"All other hand intrinsics = Ulnar nerve", icon:"🤏"},
+  {text:"Femoral = anterior thigh | Obturator = medial thigh | Sciatic = posterior thigh + below knee", icon:"🦵"},
+  {text:'"Tuesday At Noon, Medics Relax" — Tibial, Axillary, Nerve to subclavius, Musculocutaneous, Radial (terminal branches of brachial plexus in order)', icon:"💡"},
+];
+
+const questionBank = [
+  {muscle:"Deltoid",answer:"Axillary nerve (C5–C6)",region:"Upper Limb",options:["Axillary nerve (C5–C6)","Suprascapular nerve (C5–C6)","Radial nerve (C6–C8)","Musculocutaneous nerve (C5–C7)"]},
+  {muscle:"Biceps brachii",answer:"Musculocutaneous nerve (C5–C7)",region:"Upper Limb",options:["Radial nerve (C5–C8)","Musculocutaneous nerve (C5–C7)","Median nerve (C6–C8)","Axillary nerve (C5–C6)"]},
+  {muscle:"Triceps brachii",answer:"Radial nerve (C6–C8)",region:"Upper Limb",options:["Musculocutaneous nerve (C5–C7)","Ulnar nerve (C7–T1)","Radial nerve (C6–C8)","Median nerve (C6–C8)"]},
+  {muscle:"Diaphragm",answer:"Phrenic nerve (C3–C5)",region:"Thorax",options:["Phrenic nerve (C3–C5)","Vagus nerve (CN X)","Intercostal nerves T6–T9","Thoracodorsal nerve (C6–C8)"]},
+  {muscle:"Serratus anterior",answer:"Long thoracic nerve (C5–C7)",region:"Thorax",options:["Thoracodorsal nerve (C6–C8)","Intercostal nerves T1–T6","Long thoracic nerve (C5–C7)","Medial pectoral nerve (C8–T1)"]},
+  {muscle:"Gluteus maximus",answer:"Inferior gluteal nerve (L5–S2)",region:"Lower Limb",options:["Superior gluteal nerve (L4–S1)","Inferior gluteal nerve (L5–S2)","Obturator nerve (L2–L4)","Sciatic nerve (L4–S3)"]},
+  {muscle:"Gluteus medius",answer:"Superior gluteal nerve (L4–S1)",region:"Lower Limb",options:["Inferior gluteal nerve (L5–S2)","Obturator nerve (L2–L4)","Superior gluteal nerve (L4–S1)","Femoral nerve (L2–L4)"]},
+  {muscle:"Quadriceps femoris",answer:"Femoral nerve (L2–L4)",region:"Lower Limb",options:["Obturator nerve (L2–L4)","Femoral nerve (L2–L4)","Superior gluteal nerve (L4–S1)","Sciatic nerve (L4–S3)"]},
+  {muscle:"Adductor longus",answer:"Obturator nerve (L2–L4)",region:"Lower Limb",options:["Femoral nerve (L2–L4)","Sciatic nerve (L4–S3)","Obturator nerve (L2–L4)","Tibial nerve (L4–S3)"]},
+  {muscle:"Gastrocnemius",answer:"Tibial nerve (S1–S2)",region:"Lower Limb",options:["Tibial nerve (S1–S2)","Common fibular nerve (L4–S2)","Sural nerve (S1–S2)","Deep fibular nerve (L4–S1)"]},
+  {muscle:"Tibialis anterior",answer:"Deep fibular nerve (L4–S1)",region:"Lower Limb",options:["Superficial fibular nerve (L5–S1)","Tibial nerve (L4–S1)","Deep fibular nerve (L4–S1)","Common fibular nerve (L4–S2)"]},
+  {muscle:"Abductor pollicis brevis",answer:"Median nerve — recurrent branch (C8–T1)",region:"Upper Limb",options:["Ulnar nerve deep branch (C8–T1)","Median nerve — recurrent branch (C8–T1)","Radial nerve (C7–C8)","Anterior interosseous nerve (C8–T1)"]},
+  {muscle:"Flexor digitorum superficialis",answer:"Median nerve (C7–C8)",region:"Upper Limb",options:["Ulnar nerve (C7–T1)","Median nerve (C7–C8)","Anterior interosseous nerve (C8–T1)","Radial nerve (C6–C8)"]},
+  {muscle:"Flexor carpi ulnaris",answer:"Ulnar nerve (C7–T1)",region:"Upper Limb",options:["Median nerve (C6–C8)","Ulnar nerve (C7–T1)","Radial nerve (C6–C7)","Anterior interosseous nerve (C8–T1)"]},
+  {muscle:"Masseter",answer:"CN V3 — Mandibular division",region:"Head & Neck",options:["CN VII — Facial nerve","CN V3 — Mandibular division","CN IX — Glossopharyngeal","CN X — Vagus nerve"]},
+  {muscle:"Orbicularis oculi",answer:"CN VII — Facial nerve",region:"Head & Neck",options:["CN V1 — Ophthalmic division","CN III — Oculomotor nerve","CN VII — Facial nerve","CN VI — Abducens nerve"]},
+  {muscle:"Sternocleidomastoid",answer:"CN XI — Accessory nerve + C2",region:"Head & Neck",options:["CN XII — Hypoglossal nerve","CN X — Vagus nerve","CN XI — Accessory nerve + C2","Ansa cervicalis (C1–C3)"]},
+  {muscle:"Rectus abdominis",answer:"Intercostal nerves T7–T12",region:"Abdomen",options:["Iliohypogastric nerve (L1)","Intercostal nerves T7–T12","Ilioinguinal nerve (L1)","Subcostal nerve (T12)"]},
+  {muscle:"Piriformis",answer:"Nerve to piriformis (S1–S2)",region:"Lower Limb",options:["Superior gluteal nerve (L4–S1)","Inferior gluteal nerve (L5–S2)","Nerve to piriformis (S1–S2)","Obturator internus nerve (L5–S2)"]},
+  {muscle:"Levator ani",answer:"Pudendal nerve (S2–S4) + direct S3–S4 branches",region:"Pelvis",options:["Obturator nerve (L2–L4)","Pudendal nerve (S2–S4) + direct S3–S4 branches","Inferior gluteal nerve (L5–S2)","Sciatic nerve (L4–S3)"]},
+];
+
+function shuffle(arr){ return [...arr].sort(()=>Math.random()-.5); }
+
+// ─── STYLES (reusable objects) ────────────────────────────────────────────────
+const S = {
+  page:     {background:"#0F1117",minHeight:"100%",color:"#E8ECF0"},
+  card:     {background:"#1A1D27",border:"1px solid #2A2E45",borderRadius:12,padding:"13px 14px"},
+  tag:      {fontSize:11,background:"#0F1117",border:"1px solid #2A2E45",borderRadius:6,padding:"3px 8px",color:"#C0CAD8"},
+};
+
+// ─── ATLAS ────────────────────────────────────────────────────────────────────
+function Atlas(){
+  const [active, setActive] = useState("head");
+  const region = regions.find(r=>r.id===active);
+  const c = region.color, ac = region.accent;
+
+  return e("div", {style:S.page},
+
+    // Header
+    e("div", {style:{background:"linear-gradient(135deg,#1A1D27,#22253A)",borderBottom:"1px solid #2A2E45",padding:"20px 20px 16px"}},
+      e("div", {style:{fontSize:10,letterSpacing:"0.18em",color:"#7A8BAA",textTransform:"uppercase",marginBottom:4}}, "Clinical Reference"),
+      e("h1", {style:{fontSize:22,fontWeight:800,letterSpacing:"-0.02em",color:"#fff"}},
+        "Human Muscle ", e("span",{style:{color:c}},"Atlas")
+      ),
+      e("p",  {style:{marginTop:4,fontSize:12,color:"#7A8BAA"}}, "Location · Nerve Supply · Key Mnemonics")
+    ),
+
+    // Region tabs
+    e("div", {style:{display:"flex",gap:8,padding:"14px 16px",overflowX:"auto",background:"#13161F"}},
+      regions.map(r=>
+        e("button", {
+          key:r.id, onClick:()=>setActive(r.id),
+          style:{flexShrink:0,padding:"7px 14px",borderRadius:20,cursor:"pointer",display:"flex",alignItems:"center",gap:5,transition:"all .2s",fontSize:12,fontWeight:active===r.id?700:500,
+            border:active===r.id?`2px solid ${r.color}`:"2px solid #2A2E45",
+            background:active===r.id?`${r.color}22`:"#1A1D27",
+            color:active===r.id?r.color:"#7A8BAA"}
+        }, r.icon, " ", r.label)
+      )
+    ),
+
+    // Region body
+    e("div", {style:{padding:"18px 16px 8px"}},
+      e("div", {style:{display:"flex",alignItems:"center",gap:10,marginBottom:16}},
+        e("div", {style:{width:4,height:32,borderRadius:2,background:c}}),
+        e("div", null,
+          e("div",{style:{fontSize:18,fontWeight:800,color:"#fff"}}, region.icon+" "+region.label),
+          e("div",{style:{fontSize:11,color:"#7A8BAA",marginTop:2}}, region.groups.length+" muscle groups")
+        )
+      ),
+      e("div", {style:{display:"flex",flexDirection:"column",gap:10}},
+        region.groups.map((g,i)=>
+          e("div",{key:i,style:{...S.card,background:g.highlight?`${c}14`:"#1A1D27",border:g.highlight?`1px solid ${c}55`:"1px solid #2A2E45"}},
+            e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}},
+              e("div",{style:{fontSize:13,fontWeight:700,color:"#fff"}}, g.name),
+              g.highlight && e("span",{style:{fontSize:9,letterSpacing:"0.1em",background:`${c}33`,color:c,padding:"2px 7px",borderRadius:10,textTransform:"uppercase",fontWeight:700}},"High yield")
+            ),
+            e("div",{style:{display:"inline-flex",alignItems:"center",gap:6,background:`${ac}22`,border:`1px solid ${ac}55`,borderRadius:6,padding:"3px 9px",marginBottom:10}},
+              e("span",{style:{fontSize:9,color:ac,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase"}},"Nerve"),
+              e("span",{style:{fontSize:11,color:"#D0D8E8",fontWeight:600}}, g.nerve)
+            ),
+            e("div",{style:{display:"flex",flexWrap:"wrap",gap:5}},
+              g.muscles.map((m,j)=>e("span",{key:j,style:S.tag},m))
+            )
+          )
+        )
+      )
+    ),
+
+    // Mnemonics
+    e("div",{style:{padding:"16px 16px 24px"}},
+      e("div",{style:{fontSize:10,letterSpacing:"0.16em",color:"#7A8BAA",textTransform:"uppercase",marginBottom:10}},"🧩 Key Mnemonics"),
+      e("div",{style:{display:"flex",flexDirection:"column",gap:7}},
+        mnemonics.map((m,i)=>
+          e("div",{key:i,style:{...S.card,display:"flex",gap:9,alignItems:"flex-start"}},
+            e("span",{style:{fontSize:15,flexShrink:0}},m.icon),
+            e("span",{style:{fontSize:11,color:"#C0CAD8",lineHeight:1.5}},m.text)
+          )
+        )
+      )
+    ),
+    e("div",{style:{textAlign:"center",padding:"0 20px 16px",fontSize:10,color:"#3A4155"}},"Cross-reference with BNF / Katzung before clinical use")
+  );
+}
+
+// ─── QUIZ ─────────────────────────────────────────────────────────────────────
+function Quiz(){
+  const [mode,       setMode]       = useState("home");
+  const [questions,  setQuestions]  = useState([]);
+  const [current,    setCurrent]    = useState(0);
+  const [score,      setScore]      = useState(0);
+  const [selected,   setSelected]   = useState(null);
+  const [feedback,   setFeedback]   = useState(false);
+  const [typed,      setTyped]      = useState("");
+  const [aiRes,      setAiRes]      = useState(null);
+  const [loading,    setLoading]    = useState(false);
+  const [answers,    setAnswers]    = useState([]);
+
+  function start(type){
+    setQuestions(shuffle(questionBank).slice(0,10));
+    setCurrent(0);setScore(0);setSelected(null);
+    setFeedback(false);setTyped("");setAiRes(null);setAnswers([]);
+    setMode(type);
+  }
+
+  function pickMCQ(opt){
+    if(feedback) return;
+    setSelected(opt);setFeedback(true);
+    const ok = opt===questions[current].answer;
+    if(ok) setScore(s=>s+1);
+    setAnswers(a=>[...a,{...questions[current],correct:ok,given:opt}]);
+  }
+
+  function next(){
+    if(current+1>=questions.length){setMode("result");}
+    else{setCurrent(c=>c+1);setSelected(null);setFeedback(false);setTyped("");setAiRes(null);}
+  }
+
+  async function submitTyped(){
+    if(!typed.trim()||loading) return;
+    setLoading(true);
+    const q=questions[current];
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",max_tokens:1000,
+          system:`You are a concise medical education tutor. Respond ONLY in this exact JSON with no markdown or preamble: {"correct":true or false,"score":0-10,"feedback":"2-3 sentences","tip":"one clinical pearl"}`,
+          messages:[{role:"user",content:`Muscle: ${q.muscle}\nCorrect: ${q.answer}\nStudent: ${typed}\nAssess.`}]
+        })
+      });
+      const data=await res.json();
+      const text=data.content.map(c=>c.text||"").join("");
+      const parsed=JSON.parse(text.replace(/```json|```/g,"").trim());
+      setAiRes(parsed);
+      const ok=parsed.correct||parsed.score>=7;
+      if(ok) setScore(s=>s+1);
+      setAnswers(a=>[...a,{...q,correct:ok,given:typed}]);
+      setFeedback(true);
+    }catch(err){
+      const q2=questions[current];
+      setAiRes({feedback:"Could not reach AI (offline?). Correct answer: "+q2.answer,correct:false,score:0,tip:""});
+      setAnswers(a=>[...a,{...q2,correct:false,given:typed}]);
+      setFeedback(true);
+    }
+    setLoading(false);
+  }
+
+  // ── HOME ──
+  if(mode==="home") return e("div",{style:{...S.page,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}},
+    e("div",{style:{fontSize:48,marginBottom:10}},"🧬"),
+    e("h1",{style:{fontSize:26,fontWeight:900,letterSpacing:"-0.03em",textAlign:"center",marginBottom:6}},"Nerve Supply Quiz"),
+    e("p",{style:{color:"#7A8BAA",fontSize:13,textAlign:"center",marginBottom:36,maxWidth:280,lineHeight:1.6}},"10 questions · All body regions · Two modes"),
+    e("div",{style:{display:"flex",flexDirection:"column",gap:12,width:"100%",maxWidth:320}},
+      e("button",{onClick:()=>start("mcq"),style:{background:"linear-gradient(135deg,#9B89C4,#6B5A9E)",border:"none",borderRadius:14,padding:"16px 18px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",textAlign:"left"}},
+        e("div",null,"⚡ Multiple Choice"),
+        e("div",{style:{fontSize:11,fontWeight:400,opacity:.8,marginTop:3}},"4 options — pick the correct nerve supply")
+      ),
+      e("button",{onClick:()=>start("typed"),style:{background:"linear-gradient(135deg,#7EB8C9,#4A8FA3)",border:"none",borderRadius:14,padding:"16px 18px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",textAlign:"left"}},
+        e("div",null,"🤖 AI-Graded Free Text"),
+        e("div",{style:{fontSize:11,fontWeight:400,opacity:.8,marginTop:3}},"Type your answer — Claude grades and explains")
+      )
+    ),
+    e("p",{style:{marginTop:28,fontSize:10,color:"#3A4155"}},"Cross-referenced with Gray's Anatomy")
+  );
+
+  // ── RESULT ──
+  if(mode==="result"){
+    const pct=Math.round(score/questions.length*100);
+    const grade=pct>=80?"Excellent! 🏆":pct>=60?"Good work 👍":"Keep revising 📚";
+    const gc=pct>=80?"#85C18A":pct>=60?"#E8A87C":"#E88080";
+    return e("div",{style:{...S.page,padding:20}},
+      e("div",{style:{textAlign:"center",padding:"24px 0 18px"}},
+        e("div",{style:{fontSize:48,marginBottom:6}},pct>=80?"🏆":pct>=60?"👍":"📚"),
+        e("div",{style:{fontSize:40,fontWeight:900,color:gc}},score+"/"+questions.length),
+        e("div",{style:{fontSize:15,fontWeight:700,color:gc,marginTop:3}},grade),
+        e("div",{style:{fontSize:12,color:"#7A8BAA",marginTop:4}},pct+"% correct")
+      ),
+      e("div",{style:{...S.card,overflow:"hidden",marginBottom:18,padding:0}},
+        answers.map((a,i)=>
+          e("div",{key:i,style:{padding:"11px 14px",borderBottom:i<answers.length-1?"1px solid #2A2E45":"none",display:"flex",alignItems:"flex-start",gap:9}},
+            e("span",{style:{fontSize:14,flexShrink:0,marginTop:1}},a.correct?"✅":"❌"),
+            e("div",{style:{flex:1}},
+              e("div",{style:{fontSize:12,fontWeight:700,color:"#fff"}},a.muscle),
+              e("div",{style:{fontSize:10,color:"#85C18A",marginTop:2}},"✓ "+a.answer),
+              !a.correct&&e("div",{style:{fontSize:10,color:"#E88080",marginTop:1}},"✗ "+a.given)
+            ),
+            e("span",{style:{fontSize:9,color:regionColors[a.region]||"#7A8BAA",background:`${regionColors[a.region]||"#7A8BAA"}22`,padding:"2px 7px",borderRadius:10,flexShrink:0}},a.region)
+          )
+        )
+      ),
+      e("div",{style:{display:"flex",gap:10}},
+        e("button",{onClick:()=>setMode("home"),style:{flex:1,background:"#1A1D27",border:"1px solid #2A2E45",borderRadius:12,padding:13,color:"#C0CAD8",fontSize:13,fontWeight:600,cursor:"pointer"}},"← Home"),
+        e("button",{onClick:()=>start("mcq"),style:{flex:1,background:"linear-gradient(135deg,#9B89C4,#6B5A9E)",border:"none",borderRadius:12,padding:13,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}},"Retry MCQ ↺")
+      )
+    );
+  }
+
+  // ── QUESTION ──
+  const q=questions[current];
+  const color=regionColors[q.region]||"#7EB8C9";
+  const pct=Math.round(current/questions.length*100);
+
+  return e("div",{style:{...S.page,display:"flex",flexDirection:"column"}},
+    // progress bar
+    e("div",{style:{height:3,background:"#1A1D27"}},
+      e("div",{style:{height:"100%",width:pct+"%",background:color,transition:"width .4s ease"}})
+    ),
+    // top row
+    e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px"}},
+      e("button",{onClick:()=>setMode("home"),style:{background:"none",border:"none",color:"#7A8BAA",fontSize:18,cursor:"pointer",padding:0}},"←"),
+      e("div",{style:{fontSize:12,fontWeight:600,color:"#7A8BAA"}},
+        e("span",{style:{color:"#fff"}},current+1)," / ",questions.length
+      ),
+      e("div",{style:{fontSize:12,color:"#85C18A",fontWeight:700}},"✓ "+score)
+    ),
+    // question card + answers
+    e("div",{style:{padding:"4px 18px 20px",flex:1,display:"flex",flexDirection:"column"}},
+      e("div",{style:{background:"#1A1D27",borderRadius:14,padding:18,marginBottom:16,border:`1px solid ${color}44`}},
+        e("div",{style:{fontSize:10,letterSpacing:"0.14em",color:color,textTransform:"uppercase",marginBottom:6}},q.region),
+        e("div",{style:{fontSize:11,color:"#7A8BAA",marginBottom:4}},"Nerve supply of:"),
+        e("div",{style:{fontSize:24,fontWeight:900,color:"#fff",letterSpacing:"-0.02em"}},q.muscle)
+      ),
+
+      // MCQ
+      mode==="mcq"&&e("div",{style:{display:"flex",flexDirection:"column",gap:9}},
+        q.options.map((opt,i)=>{
+          let bg="#1A1D27",bdr="#2A2E45",tc="#C0CAD8";
+          if(feedback){
+            if(opt===q.answer){bg="#85C18A22";bdr="#85C18A";tc="#85C18A";}
+            else if(opt===selected){bg="#E8808022";bdr="#E88080";tc="#E88080";}
+          } else if(selected===opt){bg=`${color}22`;bdr=color;tc="#fff";}
+          return e("button",{key:i,onClick:()=>pickMCQ(opt),
+            style:{background:bg,border:`2px solid ${bdr}`,borderRadius:11,padding:"12px 14px",color:tc,fontSize:12,fontWeight:feedback&&opt===q.answer?700:500,cursor:"pointer",textAlign:"left",transition:"all .15s"}},
+            e("span",{style:{opacity:.5,marginRight:9,fontSize:10}},["A","B","C","D"][i]),
+            opt
+          );
+        })
+      ),
+
+      // Typed
+      mode==="typed"&&e("div",{style:{flex:1,display:"flex",flexDirection:"column"}},
+        e("textarea",{
+          value:typed,onChange:ev=>setTyped(ev.target.value),
+          disabled:feedback,
+          placeholder:"e.g. Radial nerve (C5–C8)...",
+          style:{width:"100%",background:"#1A1D27",border:`2px solid ${feedback?"#2A2E45":color}`,borderRadius:12,padding:13,color:"#E8ECF0",fontSize:13,resize:"none",height:86,outline:"none",boxSizing:"border-box"}
+        }),
+        !feedback&&e("button",{onClick:submitTyped,disabled:loading||!typed.trim(),
+          style:{marginTop:10,background:loading?"#2A2E45":`linear-gradient(135deg,${color},#4A8FA3)`,border:"none",borderRadius:12,padding:13,color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"default":"pointer"}},
+          loading?"⏳ AI grading...":"Submit Answer →"
+        ),
+        feedback&&aiRes&&e("div",{style:{marginTop:12,background:(aiRes.correct||aiRes.score>=7)?"#85C18A11":"#E8808011",border:`1px solid ${(aiRes.correct||aiRes.score>=7)?"#85C18A":"#E88080"}55`,borderRadius:12,padding:14}},
+          e("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:8}},
+            e("span",{style:{fontSize:13,fontWeight:700,color:(aiRes.correct||aiRes.score>=7)?"#85C18A":"#E88080"}},
+              (aiRes.correct||aiRes.score>=7)?"✅ Correct!":"❌ Not quite"
+            ),
+            e("span",{style:{fontSize:11,color:"#7A8BAA"}},"Score: "+aiRes.score+"/10")
+          ),
+          e("p",{style:{margin:"0 0 10px",fontSize:12,color:"#C0CAD8",lineHeight:1.6}},aiRes.feedback),
+          aiRes.tip&&e("div",{style:{background:"#0F1117",borderRadius:8,padding:"9px 11px",borderLeft:`3px solid ${color}`}},
+            e("div",{style:{fontSize:9,color:color,fontWeight:700,letterSpacing:"0.1em",marginBottom:3}},"💡 CLINICAL PEARL"),
+            e("div",{style:{fontSize:11,color:"#C0CAD8"}},aiRes.tip)
+          ),
+          e("div",{style:{marginTop:9,fontSize:11,color:"#85C18A"}},e("strong",null,"Correct answer: "),q.answer)
+        )
+      ),
+
+      feedback&&e("button",{onClick:next,style:{marginTop:14,background:`linear-gradient(135deg,${color}CC,${color}88)`,border:"none",borderRadius:12,padding:13,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}},
+        current+1>=questions.length?"See Results 🏁":"Next Question →"
+      )
+    )
+  );
+}
+
+// ─── ROOT ─────────────────────────────────────────────────────────────────────
+const NAV=[{id:"atlas",label:"Atlas",icon:"🗺️"},{id:"quiz",label:"Quiz",icon:"🧬"}];
+
+function App(){
+  const [tab,setTab]=useState("atlas");
+  return e("div",{style:{fontFamily:"'Segoe UI',system-ui,sans-serif",background:"#0F1117",display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}},
+    e("div",{style:{flex:1,overflowY:"auto"}},
+      tab==="atlas"?e(Atlas):e(Quiz)
+    ),
+    e("div",{style:{display:"flex",background:"#13161F",borderTop:"1px solid #2A2E45",flexShrink:0}},
+      NAV.map(n=>{
+        const active=tab===n.id;
+        return e("button",{key:n.id,onClick:()=>setTab(n.id),style:{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,padding:"10px 0 12px",background:"none",border:"none",cursor:"pointer",color:active?"#9B89C4":"#4A5568",transition:"color .2s"}},
+          e("span",{style:{fontSize:20}},n.icon),
+          e("span",{style:{fontSize:10,fontWeight:active?700:500,letterSpacing:"0.05em"}},n.label),
+          active&&e("div",{style:{width:20,height:2,borderRadius:1,background:"#9B89C4",marginTop:1}})
+        );
+      })
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(e(App));
+
+// ─── PWA: SERVICE WORKER ──────────────────────────────────────────────────────
+if("serviceWorker" in navigator){
+  const swCode=`
+const CACHE="muscle-atlas-v2";
+self.addEventListener("install",ev=>{
+  ev.waitUntil(
+    caches.open(CACHE).then(c=>c.add(self.registration.scope)).then(()=>self.skipWaiting())
+  );
+});
+self.addEventListener("activate",ev=>{
+  ev.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+});
+self.addEventListener("fetch",ev=>{
+  if(ev.request.url.includes("api.anthropic.com")||ev.request.url.includes("unpkg.com")){
+    ev.respondWith(fetch(ev.request).catch(()=>new Response("",{status:503})));
+    return;
+  }
+  ev.respondWith(caches.match(ev.request).then(hit=>{
+    if(hit) return hit;
+    return fetch(ev.request).then(res=>{
+      if(res&&res.ok){const cl=res.clone();caches.open(CACHE).then(c=>c.put(ev.request,cl));}
+      return res;
+    }).catch(()=>caches.match(ev.request));
+  }));
+});`;
+  const blob=new Blob([swCode],{type:"application/javascript"});
+  navigator.serviceWorker.register(URL.createObjectURL(blob),{scope:"./"}).catch(()=>{});
+}
+
+// ─── PWA: INSTALL PROMPT ──────────────────────────────────────────────────────
+let deferredPrompt=null;
+const banner=document.getElementById("install-banner");
+window.addEventListener("beforeinstallprompt",ev=>{
+  ev.preventDefault();deferredPrompt=ev;
+  if(!localStorage.getItem("pwa-dismissed")) setTimeout(()=>banner.classList.add("show"),1500);
+});
+document.getElementById("ibtn").addEventListener("click",async()=>{
+  banner.classList.remove("show");
+  if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;}
+});
+document.getElementById("dbtn").addEventListener("click",()=>{
+  banner.classList.remove("show");localStorage.setItem("pwa-dismissed","1");
+});
+window.addEventListener("appinstalled",()=>{banner.classList.remove("show");deferredPrompt=null;});
+
+// ─── PWA: iOS HINT ────────────────────────────────────────────────────────────
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone=window.matchMedia("(display-mode:standalone)").matches||navigator.standalone===true;
+if(isIOS&&!isStandalone&&!localStorage.getItem("ios-hint-dismissed")){
+  setTimeout(()=>document.getElementById("ios-hint").classList.add("show"),3000);
+}
+document.getElementById("ios-close").addEventListener("click",()=>{
+  document.getElementById("ios-hint").classList.remove("show");
+  localStorage.setItem("ios-hint-dismissed","1");
+});
+
+// ─── OFFLINE / ONLINE TOASTS ──────────────────────────────────────────────────
+function toast(id,ms=3000){
+  const el=document.getElementById(id);
+  el.classList.add("show");
+  setTimeout(()=>el.classList.remove("show"),ms);
+}
+window.addEventListener("offline",()=>toast("toast-off",4000));
+window.addEventListener("online", ()=>toast("toast-on", 2500));
+</script>
+</body>
+</html>
